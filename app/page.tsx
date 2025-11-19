@@ -50,7 +50,7 @@ export default function Home() {
         to authenticate land documents with accuracy, transparency, and security.
       </p>
 
-      <Link href="/verify">
+      <Link href="/login">
         <Button className="bg-primary hover:bg-primary/90 text-primary-foreground px-8 py-6 text-base">
           Access System
         </Button>

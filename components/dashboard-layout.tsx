@@ -53,6 +53,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               >
                 Verify Documents
               </Link>
+               <Link
+                href="/verified-documents"
+                className={`px-4 py-2 rounded-lg transition-colors ${
+                  isVerifyPage
+                    ? 'bg-primary/10 text-primary font-medium'
+                    : 'text-foreground/60 hover:text-foreground'
+                }`}
+              >
+                Verified Documents
+              </Link>
             </nav>
           </div>
 

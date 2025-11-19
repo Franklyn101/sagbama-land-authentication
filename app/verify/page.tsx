@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useEffect } from 'react'
 import { Card } from '@/components/ui/card'
 import VerificationLookup from '@/components/verification-lookup'
+import Link from 'next/link'
 
 export default function VerifyPage() {
   const { user, isLoading } = useAuth()
@@ -28,7 +29,9 @@ export default function VerifyPage() {
 
   return (
     <div className="min-h-screen bg-background">
+      
       <header className="bg-card border-b border-border/50 sticky top-0 z-50 shadow-sm">
+      
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-primary rounded-lg flex items-center justify-center">
@@ -40,6 +43,10 @@ export default function VerifyPage() {
             </div>
           </div>
         </div>
+       <div className='pl-48'>
+         <Link className='text-sm text-white p-1 rounded bg-primary' href="/dashboard">back</Link>
+
+       </div>
       </header>
 
       <main className="max-w-4xl mx-auto px-6 py-12">
