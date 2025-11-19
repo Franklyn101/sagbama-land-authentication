@@ -20,7 +20,7 @@ export default function Home() {
         </Link>
              </div>
           </div>
-          <Link href="/verify">
+          <Link href="/login">
             <Button className="bg-primary hover:bg-primary/90 text-primary-foreground">
               Sign In
             </Button>
