@@ -27,6 +27,7 @@ export default function VerificationLookup() {
   const [photoFile, setPhotoFile] = useState<File | null>(null)
   const [submitted, setSubmitted] = useState(false)
   const [documentId, setDocumentId] = useState<string>('')
+  const [isGeneratingPDF, setIsGeneratingPDF] = useState(false)
   const certRef = useRef<HTMLDivElement | null>(null)
   const [qrData, setQrData] = useState<string>('')
 
@@ -65,6 +66,7 @@ export default function VerificationLookup() {
       const dataUrl = await qrcodeModule.toDataURL(documentUrl, { margin: 1, width: 200 })
       setQrData(dataUrl)
     } catch (err) {
+      console.error('QR generation error:', err)
       // Fallback to Google Charts QR
       const fallback = `https://chart.googleapis.com/chart?cht=qr&chs=200x200&chl=${encodeURIComponent(documentUrl)}`
       setQrData(fallback)
@@ -92,26 +94,143 @@ export default function VerificationLookup() {
   }
 
   const downloadPDF = async () => {
-    if (!certRef.current) return
+    if (!certRef.current) {
+      console.error('Certificate ref not found')
+      return
+    }
     
-    if (typeof window === 'undefined') return
-    const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
-      import('html2canvas'),
-      import('jspdf'),
-    ])
+    try {
+      setIsGeneratingPDF(true)
+      
+      // Create a simplified clone of the certificate for PDF generation
+      const certificateClone = certRef.current.cloneNode(true) as HTMLElement;
+      
+      // Remove problematic elements
+      const svgBackgrounds = certificateClone.querySelectorAll('[style*="backgroundImage"]');
+      svgBackgrounds.forEach(el => {
+        el.removeAttribute('style');
+        (el as HTMLElement).style.backgroundColor = '#ffffff';
+        (el as HTMLElement).style.border = '2px solid #000000';
+      });
 
-    const canvas = await html2canvas(certRef.current, { scale: 2 })
-    const imgData = canvas.toDataURL('image/png')
-    const pdf = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' })
-    const pageWidth = pdf.internal.pageSize.getWidth()
-    const imgProps = (pdf as any).getImageProperties(imgData)
-    const imgRatio = imgProps.width / imgProps.height
-    const imgWidth = pageWidth - 40
-    const imgHeight = imgWidth / imgRatio
-    pdf.addImage(imgData, 'PNG', 20, 20, imgWidth, imgHeight)
-    
-    // Save the PDF with document ID
-    pdf.save(`${form.vendorName || 'certificate'}_${documentId}.pdf`)
+      // Create a temporary container for PDF generation
+      const tempContainer = document.createElement('div');
+      tempContainer.style.position = 'fixed';
+      tempContainer.style.left = '-9999px';
+      tempContainer.style.top = '0';
+      tempContainer.style.width = '794px';
+      tempContainer.style.backgroundColor = '#ffffff';
+      tempContainer.appendChild(certificateClone);
+      document.body.appendChild(tempContainer);
+
+      const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
+        import('html2canvas'),
+        import('jspdf')
+      ])
+
+      console.log('Starting PDF generation...')
+      
+      // Use simpler html2canvas configuration
+      const canvas = await html2canvas(tempContainer, {
+        scale: 2,
+        useCORS: true,
+        allowTaint: false,
+        backgroundColor: '#ffffff',
+        logging: false, // Disable logging to avoid extra errors
+        removeContainer: true // Clean up temporary container
+      })
+
+      // Remove temporary container
+      document.body.removeChild(tempContainer);
+
+      console.log('Canvas created, converting to PDF...')
+      
+      const imgData = canvas.toDataURL('image/png', 1.0)
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'pt',
+        format: 'a4'
+      })
+
+      const pageWidth = pdf.internal.pageSize.getWidth()
+      const pageHeight = pdf.internal.pageSize.getHeight()
+      
+      // Calculate dimensions to fit the page
+      const imgWidth = pageWidth - 40
+      const imgHeight = (canvas.height * imgWidth) / canvas.width
+      
+      // Center on page
+      const x = (pageWidth - imgWidth) / 2
+      const y = (pageHeight - imgHeight) / 2
+      
+      pdf.addImage(imgData, 'PNG', x, y, imgWidth, imgHeight)
+
+      const fileName = `${form.vendorName || 'certificate'}_${documentId}.pdf`.replace(/[^a-zA-Z0-9-_]/g, '_')
+      pdf.save(fileName)
+      
+      console.log('PDF downloaded successfully')
+      
+    } catch (error) {
+      console.error('Error generating PDF:', error)
+      // Fallback to simple PDF generation without styling
+      await downloadSimplePDF();
+    } finally {
+      setIsGeneratingPDF(false)
+    }
+  }
+
+  // Simple PDF fallback without complex styling
+  const downloadSimplePDF = async () => {
+    try {
+      const { jsPDF } = await import('jspdf');
+      
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4'
+      });
+
+      // Set font and basic styling
+      pdf.setFont('helvetica');
+      pdf.setFontSize(20);
+      pdf.text('DEED OF CONVEYANCE', 105, 30, { align: 'center' });
+
+      pdf.setFontSize(12);
+      pdf.text('BETWEEN', 105, 50, { align: 'center' });
+      pdf.setFontSize(14);
+      pdf.text(form.vendorName || '—', 105, 60, { align: 'center' });
+      pdf.setFontSize(10);
+      pdf.text('(VENDORS)', 105, 67, { align: 'center' });
+
+      pdf.setFontSize(12);
+      pdf.text('AND', 105, 80, { align: 'center' });
+      pdf.setFontSize(14);
+      pdf.text(form.purchaserName || '—', 105, 90, { align: 'center' });
+      pdf.setFontSize(10);
+      pdf.text('(PURCHASER)', 105, 97, { align: 'center' });
+
+      pdf.setFontSize(10);
+      pdf.text(`IN RESPECT OF A PARCEL OF LAND MEASURING ${form.subjectMatter || '—'}`, 105, 110, { align: 'center' });
+
+      pdf.setFontSize(12);
+      pdf.text('Prepared by:', 105, 130, { align: 'center' });
+      pdf.setFontSize(14);
+      pdf.text(form.counselName || '—', 105, 140, { align: 'center' });
+      pdf.setFontSize(10);
+      pdf.text(form.counselAddress || '', 105, 147, { align: 'center' });
+      pdf.text(form.counselContact || '', 105, 154, { align: 'center' });
+
+      // Add document ID
+      pdf.setFontSize(8);
+      pdf.text(`Document ID: ${documentId}`, 20, 280);
+
+      const fileName = `${form.vendorName || 'certificate'}_${documentId}.pdf`.replace(/[^a-zA-Z0-9-_]/g, '_');
+      pdf.save(fileName);
+
+    } catch (error) {
+      console.error('Simple PDF generation failed:', error);
+      alert('PDF generation failed. Please use the Print function instead.');
+    }
   }
 
   const resetForm = () => {
@@ -182,84 +301,118 @@ export default function VerificationLookup() {
 
       {submitted && (
         <div className="flex flex-col items-center">
-          <div ref={certRef} className="relative bg-white w-[794px] p-6" style={{ boxShadow: '0 0 0 6px rgba(0,0,0,0.85), inset 0 0 0 6px rgba(0,0,0,0.85)' }}>
-            {/* SVG patterned inner border */}
-            <div style={{ padding: 18, border: '12px solid transparent', backgroundImage: 'url("data:image/svg+xml;utf8,' + encodeURIComponent(`
-              <svg xmlns=\"http://www.w3.org/2000/svg\" width=\"100%\" height=\"100%\"> 
-                <defs>
-                  <pattern id=\"p\" width=\"24\" height=\"24\" patternUnits=\"userSpaceOnUse\"> 
-                    <rect width=\"24\" height=\"24\" fill=\"white\"/> 
-                    <path d=\"M0 12 L24 12 M12 0 L12 24\" stroke=\"black\" stroke-width=\"1\"/> 
-                  </pattern>
-                </defs>
-                <rect x=\"0\" y=\"0\" width=\"100%\" height=\"100%\" fill=\"url(#p)\"/> 
-              </svg>` ) + '")' }}>
+          {/* Certificate Preview - Simplified for PDF generation */}
+          <div 
+            ref={certRef} 
+            className="relative bg-white p-6 certificate-container pdf-optimized"
+            style={{ 
+              width: '794px',
+              minHeight: '1123px',
+              border: '6px solid #000000',
+              boxSizing: 'border-box',
+              backgroundColor: '#ffffff'
+            }}
+          >
+            {/* Simple border instead of SVG pattern */}
+            <div style={{ 
+              padding: 18, 
+              border: '12px double #000000',
+              height: '100%',
+              boxSizing: 'border-box',
+              backgroundColor: '#ffffff'
+            }}>
 
-              <div className="bg-white p-6 border border-black relative">
-                <h1 className="text-center font-bold text-2xl">DEED OF CONVEYANCE</h1>
+              <div className="bg-white p-6 border border-black relative h-full" style={{ backgroundColor: '#ffffff' }}>
+                <h1 className="text-center font-bold text-2xl" style={{ color: '#000000' }}>DEED OF CONVEYANCE</h1>
 
-                <p className="text-center mt-4 font-semibold">BETWEEN</p>
-                <p className="text-center mt-2 text-lg uppercase font-bold">{form.vendorName || '—'}</p>
-                <p className="text-center font-semibold">(VENDORS)</p>
+                <p className="text-center mt-4 font-semibold" style={{ color: '#000000' }}>BETWEEN</p>
+                <p className="text-center mt-2 text-lg uppercase font-bold" style={{ color: '#000000' }}>{form.vendorName || '—'}</p>
+                <p className="text-center font-semibold" style={{ color: '#000000' }}>(VENDORS)</p>
 
-                <p className="text-center font-semibold mt-6">AND</p>
-                <p className="text-center mt-2 text-lg uppercase font-bold">{form.purchaserName || '—'}</p>
-                <p className="text-center font-semibold">(PURCHASER)</p>
+                <p className="text-center font-semibold mt-6" style={{ color: '#000000' }}>AND</p>
+                <p className="text-center mt-2 text-lg uppercase font-bold" style={{ color: '#000000' }}>{form.purchaserName || '—'}</p>
+                <p className="text-center font-semibold" style={{ color: '#000000' }}>(PURCHASER)</p>
 
-                <div className="mt-6 text-center text-sm">IN RESPECT OF A PARCEL OF LAND MEASURING {form.subjectMatter || '—'}</div>
+                <div className="mt-6 text-center text-sm" style={{ color: '#000000' }}>
+                  IN RESPECT OF A PARCEL OF LAND MEASURING {form.subjectMatter || '—'}
+                </div>
 
                 <div className="mt-6 flex flex-col items-center">
                   {form.counselPhoto && (
-                    <img src={form.counselPhoto} alt="Counsel" className="w-28 h-28 object-cover rounded-full border mb-3" />
+                    <img 
+                      src={form.counselPhoto} 
+                      alt="Counsel" 
+                      className="w-28 h-28 object-cover rounded-full border mb-3"
+                      style={{ borderColor: '#000000' }}
+                    />
                   )}
 
-                  <p className="font-bold mt-2">Prepared by:</p>
-                  <p className="mt-2 font-semibold uppercase">{form.counselName || '—'}</p>
-                  <p className="text-sm">{form.counselAddress}</p>
-                  <p className="text-sm">{form.counselContact}</p>
+                  <p className="font-bold mt-2" style={{ color: '#000000' }}>Prepared by:</p>
+                  <p className="mt-2 font-semibold uppercase" style={{ color: '#000000' }}>{form.counselName || '—'}</p>
+                  <p className="text-sm" style={{ color: '#000000' }}>{form.counselAddress}</p>
+                  <p className="text-sm" style={{ color: '#000000' }}>{form.counselContact}</p>
                 </div>
 
-                <div className="mt-6 text-center font-bold">DEED OF CONVEYANCE</div>
+                <div className="mt-6 text-center font-bold" style={{ color: '#000000' }}>DEED OF CONVEYANCE</div>
 
                 {/* QR code bottom-left */}
                 <div className="absolute left-6 bottom-6">
                   {qrData ? (
-                    <img src={qrData} alt="QR code" className="w-24 h-24 border" />
+                    <img 
+                      src={qrData} 
+                      alt="QR code" 
+                      className="w-24 h-24 border"
+                      style={{ borderColor: '#000000' }}
+                    />
                   ) : (
-                    <div className="w-24 h-24 border flex items-center justify-center text-xs">QR</div>
+                    <div className="w-24 h-24 border flex items-center justify-center text-xs" style={{ borderColor: '#000000', color: '#000000' }}>QR</div>
                   )}
                 </div>
 
                 {/* Document ID for reference */}
-                <div className="absolute left-6 top-6 text-xs text-gray-500">
+                <div className="absolute left-6 top-6 text-xs" style={{ color: '#666666' }}>
                   ID: {documentId}
                 </div>
 
-                {/* Round seal / stamp bottom-right */}
+                {/* Simple seal instead of SVG */}
                 <div className="absolute right-6 bottom-6 flex items-center">
-                  <svg width="120" height="120" viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg" className="drop-shadow">
-                    <defs>
-                      <radialGradient id="g" cx="50%" cy="50%" r="50%">
-                        <stop offset="0%" stopColor="#fff" />
-                        <stop offset="100%" stopColor="#eee" />
-                      </radialGradient>
-                    </defs>
-                    <circle cx="60" cy="60" r="56" fill="url(#g)" stroke="black" strokeWidth="2" />
-                    <circle cx="60" cy="60" r="42" fill="none" stroke="black" strokeWidth="2" />
-                    <text x="60" y="34" fontSize="10" textAnchor="middle" fontWeight="bold">SAGBAMA</text>
-                    <text x="60" y="50" fontSize="8" textAnchor="middle">LOCAL GOVERNMENT</text>
-                    <text x="60" y="70" fontSize="8" textAnchor="middle">LAND AUTH</text>
-                    <text x="60" y="88" fontSize="7" textAnchor="middle">CERTIFIED TRUE COPY</text>
-                  </svg>
+                  <div style={{
+                    width: '120px',
+                    height: '120px',
+                    border: '2px solid #000000',
+                    borderRadius: '50%',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    backgroundColor: '#f8f8f8',
+                    textAlign: 'center',
+                    padding: '10px',
+                    boxSizing: 'border-box'
+                  }}>
+                    <div style={{ fontSize: '10px', fontWeight: 'bold', marginBottom: '2px' }}>SAGBAMA</div>
+                    <div style={{ fontSize: '8px', marginBottom: '2px' }}>LOCAL GOVERNMENT</div>
+                    <div style={{ fontSize: '8px', marginBottom: '2px' }}>LAND AUTH</div>
+                    <div style={{ fontSize: '7px' }}>CERTIFIED TRUE COPY</div>
+                  </div>
                 </div>
-
               </div>
             </div>
           </div>
 
           <div className="flex gap-2 mt-4">
-            <Button onClick={downloadPDF} className="bg-primary text-primary-foreground">Download PDF</Button>
+            <Button 
+              onClick={downloadPDF} 
+              disabled={isGeneratingPDF}
+              className="bg-primary text-primary-foreground"
+            >
+              {isGeneratingPDF ? 'Generating PDF...' : 'Download PDF'}
+            </Button>
             <Button onClick={() => window.print()} variant="outline">Print</Button>
+          </div>
+
+          <div className="mt-4 text-sm text-gray-500 text-center">
+            <p>If PDF download fails, use the Print button and select "Save as PDF"</p>
           </div>
         </div>
       )}
