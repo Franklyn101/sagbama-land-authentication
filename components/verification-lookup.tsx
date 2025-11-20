@@ -4,8 +4,7 @@ import { useState, useRef, useEffect } from 'react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { getDocuments } from '@/lib/storage'
-import type { Document } from '@/lib/storage'
+import { getDocuments, saveDocument, type Document } from '@/lib/storage'
 
 export default function VerificationLookup() {
   const [form, setForm] = useState({
@@ -27,8 +26,13 @@ export default function VerificationLookup() {
   })
   const [photoFile, setPhotoFile] = useState<File | null>(null)
   const [submitted, setSubmitted] = useState(false)
+  const [documentId, setDocumentId] = useState<string>('')
   const certRef = useRef<HTMLDivElement | null>(null)
   const [qrData, setQrData] = useState<string>('')
+
+  const generateDocumentId = () => {
+    return `doc_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+  }
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target
@@ -46,34 +50,50 @@ export default function VerificationLookup() {
     reader.readAsDataURL(file)
   }
 
-  // generate QR code with dynamic import of 'qrcode' if available, else fall back to Google Chart API URL
-  const generateQr = async (text: string) => {
-    if (!text) {
+  // Generate QR code with document URL
+  const generateQr = async (docId: string) => {
+    if (!docId) {
       setQrData('')
       return
     }
+    
+    // Create a URL that will display the document
+    const documentUrl = `${window.location.origin}/documents/${docId}`
+    
     try {
       const qrcodeModule = await import('qrcode')
-      const dataUrl = await qrcodeModule.toDataURL(text, { margin: 1, width: 200 })
+      const dataUrl = await qrcodeModule.toDataURL(documentUrl, { margin: 1, width: 200 })
       setQrData(dataUrl)
     } catch (err) {
-      // fallback to Google Charts QR (no install required) — note: depends on external service
-      const fallback = `https://chart.googleapis.com/chart?cht=qr&chs=200x200&chl=${encodeURIComponent(text)}`
+      // Fallback to Google Charts QR
+      const fallback = `https://chart.googleapis.com/chart?cht=qr&chs=200x200&chl=${encodeURIComponent(documentUrl)}`
       setQrData(fallback)
     }
   }
 
-  useEffect(() => {
-    // whenever form values that we want encoded change, regenerate QR
-    if (submitted) {
-      const payload = JSON.stringify({ vendor: form.vendorName, purchaser: form.purchaserName, ref: form.bainNumber || form.executionDate })
-      generateQr(payload)
+  const handleSubmit = async () => {
+    // Generate unique document ID
+    const docId = generateDocumentId()
+    setDocumentId(docId)
+    
+    // Save document data to storage
+    const documentData: Document = {
+      id: docId,
+      ...form,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     }
-  }, [submitted, form.vendorName, form.purchaserName, form.bainNumber, form.executionDate])
+    
+    await saveDocument(documentData)
+    
+    // Generate QR code with document URL
+    await generateQr(docId)
+    setSubmitted(true)
+  }
 
   const downloadPDF = async () => {
     if (!certRef.current) return
-    // dynamic import to keep bundle small; assumes html2canvas and jspdf are installed
+    
     if (typeof window === 'undefined') return
     const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
       import('html2canvas'),
@@ -89,7 +109,33 @@ export default function VerificationLookup() {
     const imgWidth = pageWidth - 40
     const imgHeight = imgWidth / imgRatio
     pdf.addImage(imgData, 'PNG', 20, 20, imgWidth, imgHeight)
-    pdf.save(`${form.vendorName || 'certificate'}.pdf`)
+    
+    // Save the PDF with document ID
+    pdf.save(`${form.vendorName || 'certificate'}_${documentId}.pdf`)
+  }
+
+  const resetForm = () => {
+    setForm({
+      counselName: '',
+      counselAddress: '',
+      counselContact: '',
+      documentType: '',
+      vendorName: '',
+      vendorAddress: '',
+      purchaserName: '',
+      purchaserAddress: '',
+      subjectMatter: '',
+      purchaseValue: '',
+      legalFee: '',
+      branchCommission: '',
+      executionDate: '',
+      bainNumber: '',
+      counselPhoto: '',
+    })
+    setPhotoFile(null)
+    setSubmitted(false)
+    setDocumentId('')
+    setQrData('')
   }
 
   return (
@@ -124,12 +170,12 @@ export default function VerificationLookup() {
           </div>
 
           <div className="flex gap-2">
-            <Button type="button" onClick={() => setSubmitted(true)} className="flex-1 bg-primary text-primary-foreground">Preview Certificate</Button>
-            <Button type="button" onClick={() => { setForm({
-              counselName: '', counselAddress: '', counselContact: '', documentType: '', vendorName: '', vendorAddress: '', purchaserName: '', purchaserAddress: '', subjectMatter: '', purchaseValue: '', legalFee: '', branchCommission: '', executionDate: '', bainNumber: '', counselPhoto: '' })
-              setPhotoFile(null)
-              setSubmitted(false)
-            }} variant="outline" className="flex-1">Reset</Button>
+            <Button type="button" onClick={handleSubmit} className="flex-1 bg-primary text-primary-foreground">
+              Preview Certificate
+            </Button>
+            <Button type="button" onClick={resetForm} variant="outline" className="flex-1">
+              Reset
+            </Button>
           </div>
         </form>
       </Card>
@@ -178,11 +224,15 @@ export default function VerificationLookup() {
                 {/* QR code bottom-left */}
                 <div className="absolute left-6 bottom-6">
                   {qrData ? (
-                    // either data URL from qrcode lib or fallback google chart URL
                     <img src={qrData} alt="QR code" className="w-24 h-24 border" />
                   ) : (
                     <div className="w-24 h-24 border flex items-center justify-center text-xs">QR</div>
                   )}
+                </div>
+
+                {/* Document ID for reference */}
+                <div className="absolute left-6 top-6 text-xs text-gray-500">
+                  ID: {documentId}
                 </div>
 
                 {/* Round seal / stamp bottom-right */}

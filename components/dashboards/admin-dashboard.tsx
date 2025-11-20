@@ -1,95 +1,122 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { Card } from '@/components/ui/card'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { getAllUsers, User } from '@/lib/auth'
-import { getDocuments } from '@/lib/storage'
+import { getDocuments, getPendingDocuments, getVerifiedDocuments } from '@/lib/storage'
+import { useEffect, useState } from 'react'
 
 export default function AdminDashboard() {
-  const [users, setUsers] = useState<User[]>([])
   const [stats, setStats] = useState({
-    totalUsers: 0,
-    totalDocuments: 0,
-    pendingDocuments: 0,
-    verifiedDocuments: 0,
+    total: 0,
+    pending: 0,
+    verified: 0
   })
 
   useEffect(() => {
-    const allUsers = getAllUsers()
-    const allDocs = getDocuments()
-    setUsers(allUsers)
-    setStats({
-      totalUsers: allUsers.length,
-      totalDocuments: allDocs.length,
-      pendingDocuments: allDocs.filter(d => d.status === 'pending').length,
-      verifiedDocuments: allDocs.filter(d => d.status === 'verified').length,
-    })
+    const loadStats = async () => {
+      try {
+        const [allDocs, pendingDocs, verifiedDocs] = await Promise.all([
+          getDocuments(),
+          getPendingDocuments(),
+          getVerifiedDocuments()
+        ])
+        
+        setStats({
+          total: allDocs.length,
+          pending: pendingDocs.length,
+          verified: verifiedDocs.length
+        })
+      } catch (error) {
+        console.error('Error loading stats:', error)
+      }
+    }
+
+    loadStats()
   }, [])
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <div>
-        <h2 className="text-3xl font-bold text-foreground mb-2">Administration Dashboard</h2>
-        <p className="text-foreground/60">Manage users, view system statistics, and monitor document flow</p>
+        <h1 className="text-3xl font-bold text-foreground">Admin Dashboard</h1>
+        <p className="text-foreground/60">Manage system documents and users</p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card className="p-6 border-border/50 bg-gradient-to-br from-primary/5 to-transparent">
-          <div className="text-foreground/60 text-sm mb-2">Total Users</div>
-          <div className="text-4xl font-bold text-primary">{stats.totalUsers}</div>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Total Documents</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{stats.total}</div>
+            <p className="text-xs text-muted-foreground">All documents in system</p>
+          </CardContent>
         </Card>
-        <Card className="p-6 border-border/50 bg-gradient-to-br from-accent/5 to-transparent">
-          <div className="text-foreground/60 text-sm mb-2">Total Documents</div>
-          <div className="text-4xl font-bold text-accent">{stats.totalDocuments}</div>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Pending Review</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-yellow-600">{stats.pending}</div>
+            <p className="text-xs text-muted-foreground">Awaiting verification</p>
+          </CardContent>
         </Card>
-        <Card className="p-6 border-border/50 bg-gradient-to-br from-yellow-500/5 to-transparent">
-          <div className="text-foreground/60 text-sm mb-2">Pending Verification</div>
-          <div className="text-4xl font-bold text-yellow-600">{stats.pendingDocuments}</div>
-        </Card>
-        <Card className="p-6 border-border/50 bg-gradient-to-br from-green-500/5 to-transparent">
-          <div className="text-foreground/60 text-sm mb-2">Verified Documents</div>
-          <div className="text-4xl font-bold text-green-600">{stats.verifiedDocuments}</div>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Verified</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-green-600">{stats.verified}</div>
+            <p className="text-xs text-muted-foreground">Successfully verified</p>
+          </CardContent>
         </Card>
       </div>
 
-      <Card className="border-border/50 overflow-hidden">
-        <div className="p-6 border-b border-border/50">
-          <h3 className="text-xl font-bold text-foreground">System Users</h3>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-secondary/5 border-b border-border/50">
-              <tr>
-                <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Name</th>
-                <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Email</th>
-                <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Role</th>
-                <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Joined</th>
-              </tr>
-            </thead>
-            <tbody>
-              {users.map((user) => (
-                <tr key={user.id} className="border-b border-border/30 hover:bg-secondary/5">
-                  <td className="px-6 py-3 text-sm text-foreground">{user.name}</td>
-                  <td className="px-6 py-3 text-sm text-foreground/70">{user.email}</td>
-                  <td className="px-6 py-3 text-sm">
-                    <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                      user.role === 'admin' ? 'bg-primary/20 text-primary' :
-                      user.role === 'officer' ? 'bg-accent/20 text-accent' :
-                      'bg-secondary/20 text-secondary'
-                    }`}>
-                      {user.role}
-                    </span>
-                  </td>
-                  <td className="px-6 py-3 text-sm text-foreground/60">
-                    {new Date(user.createdAt).toLocaleDateString()}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>Quick Actions</CardTitle>
+            <CardDescription>Manage system operations</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <Button className="w-full justify-start" variant="outline">
+              Manage Users
+            </Button>
+            <Button className="w-full justify-start" variant="outline">
+              System Settings
+            </Button>
+            <Button className="w-full justify-start" variant="outline">
+              View Reports
+            </Button>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Recent Activity</CardTitle>
+            <CardDescription>Latest system events</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              <div className="flex items-center space-x-4">
+                <div className="flex-1 space-y-1">
+                  <p className="text-sm font-medium">System Update</p>
+                  <p className="text-sm text-muted-foreground">Database maintenance completed</p>
+                </div>
+                <div className="text-sm text-muted-foreground">2h ago</div>
+              </div>
+              <div className="flex items-center space-x-4">
+                <div className="flex-1 space-y-1">
+                  <p className="text-sm font-medium">New Document</p>
+                  <p className="text-sm text-muted-foreground">Deed of conveyance uploaded</p>
+                </div>
+                <div className="text-sm text-muted-foreground">4h ago</div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   )
 }
